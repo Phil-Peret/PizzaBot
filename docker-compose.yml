@@ -13,3 +13,5 @@ services:
     environment:
       MARIADB_DATABASE: pizza311bot
       MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+    ports:
+     - "127.0.0.1:3306:3306" # TODO: used for local DBeaver visualization, disable/comment in prod
