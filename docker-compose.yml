@@ -1,3 +1,15 @@
 services:
   bot:
-    build: .
+    build: 
+      context: .
+      dockerfile: bot.Dockerfile
+    restart: unless-stopped
+
+  database:
+    build:
+      context: .
+      dockerfile: db.Dockerfile
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: pizza311bot
+      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
