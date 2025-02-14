@@ -1,4 +1,6 @@
-IMAGE_NAME=alpine:pizzabot
+IMAGE_NAME = alpine:pizzabot
+VENV = venv_pizzabot
+PYTHON = python3
 
 build:
 	docker build -t $(IMAGE_NAME) .
@@ -11,3 +13,18 @@ shell:
 
 clean:
 	docker rmi $(IMAGE_NAME)
+
+setup-local:
+	$(PYTHON) -m venv $(VENV)
+	$(VENV)/bin/pip install --upgrade pip
+	$(VENV)/bin/pip install -r requirements.txt
+
+activate-venv:
+	@echo "Exec: source $(VENV)/bin/activate"
+
+cleanup:
+	rm -rf $(VENV)
+
+
+	
+
