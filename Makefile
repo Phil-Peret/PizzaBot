@@ -1,5 +1,5 @@
 IMAGE_NAME = alpine:pizzabot
-VENV = venv_pizzabot
+VENV = venv
 PYTHON = python3
 
 build:
