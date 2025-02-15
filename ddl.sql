@@ -4,6 +4,7 @@ CREATE TABLE `users` (
   `telegram_id` int(10) unsigned NOT NULL DEFAULT 0,
   `username` varchar(100) NOT NULL,
   `is_admin` int(10) unsigned NOT NULL DEFAULT 0,
+  `is_enabled` int(10) unsigned NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`telegram_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
@@ -27,3 +28,6 @@ CREATE TABLE `places` (
   `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`place_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+
+-- DEFAULT ADMINS
+INSERT INTO users (telegram_id, username, is_admin, is_enabled) VALUES (121527971, 'Alessandro Marchioro', 1, 1);
