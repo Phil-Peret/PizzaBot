@@ -1,3 +1,4 @@
+import asyncio
 import os
 import pymysql.cursors
 from functools import wraps
@@ -30,10 +31,10 @@ def ensure_is_enabled(func):
 Premi /registrami se ancora non l'hai fatto!""")
     return wrapper
 
-def ensure_is_rider_admin(func):
+def ensure_is_rider(func):
     @wraps(func)
     async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
-        if await is_rider(update, context):
+        if await (is_rider(update, context) or is_admin(update, context)):
             return await func(update, context, *args, **kwargs)
         else:
             await update.message.reply_text(f"""🚫 Non sei il rider di questa pizzata, attendi la prossima!""")
@@ -89,7 +90,7 @@ async def already_registered(telegram_id: int) -> bool:
             cursor.execute(sql, (telegram_id,))
             return cursor.fetchone() is not None
 
-async def already_set_rider() -> bool:
+async def already_rider_selected() -> bool:
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
@@ -115,8 +116,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     telegram_id = update.effective_chat.id
     # block user already registered
     if already_registered(telegram_id):
-        await update.message.reply_text(f"""Hai già mandato una richiesta o sei già registrato a questo bot!
-Attendi che un amministratore accetti la tua richiesta""")
+        await update.message.reply_text(f"""Hai già una richiesta in attesa o sei già registrato a questo bot!""")
         return
     # Adding user to database in users with authorized = 0 for further authorization
     connection = get_db_connection()
@@ -124,18 +124,22 @@ Attendi che un amministratore accetti la tua richiesta""")
         with connection.cursor() as cursor:
             sql = "INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE telegram_id = telegram_id;"
             cursor.execute(sql, (telegram_id, username,))
-
         connection.commit()
-
-    # TODO: Notifying all admins of registration, so that they can accept the new user ASAP
+    notify_admin(f"""Un nuovo utene è in attesa di essere accettato: *{username}*""")
 
     response = f"""Ciao {username}, sarai tra poco accettato nel bot da un amministratore!
-
 Non appena avremmo conferma, ti verrá notificato qui l'esito della registrazione :)"""
-
     await update.message.reply_text(response)
 
-
+async def notify_admin(message: str) -> None:
+    admin_ids = []
+    connection = get_db_connection()
+    with connection:
+        with connection.cursor() as cursor:
+            sql = "SELECT telegram_id FROM users WHERE is_admin = 1"
+            cursor.execute(sql)
+            admin_ids = [row['telegram_id'] for row in cursor.fetchall()]
+    await asyncio.gather(*(app.bot.send_message(admin_id, message) for admin_id in admin_ids))
 
 @ensure_is_admin
 async def list_accept_registrations(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -178,7 +182,7 @@ async def accept_registration(update: Update, context: ContextTypes) -> None:
 @ensure_is_enabled
 async def become_a_rider(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
-    if already_set_rider():
+    if already_rider_selected():
         await update.message.reply_text(f"""C'è già un rider per questa serata! 
 Ordina pure la pizza che prefersici con il comando /ordina""")
         return
@@ -191,7 +195,7 @@ Ordina pure la pizza che prefersici con il comando /ordina""")
     await update.message.reply_text(f"""Sei diventato rider per questa pizzata! 
 Adesso potrai vedere la lista delle pizze dei vari utenti e il prezzo!""")
 
-@ensure_is_rider_admin
+@ensure_is_rider
 async def check_list_item() -> None:
     """TODO: Ricavare la lista degli ordini e visualizzare il totale provvisorio/definitivo al momento della chiusura delle prenotazioni"""
 
@@ -227,6 +231,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         commands.update(admin_commands)
     else:
         commands = unregistered_commands
+        await update.message.reply_text("""Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!""")
     # telegram not set duplicate commands
     await app.bot.setMyCommands(list(commands))
 
