@@ -31,6 +31,7 @@ def ensure_is_enabled(func):
 Premi /registrami se ancora non l'hai fatto!""")
     return wrapper
 
+# admin bypass rider check
 def ensure_is_rider(func):
     @wraps(func)
     async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
@@ -232,7 +233,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     else:
         commands = unregistered_commands
         await update.message.reply_text("""Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!""")
-    # telegram not set duplicate commands
+    # telegram not accept duplicate commands
     await app.bot.setMyCommands(list(commands))
 
 if __name__ == "__main__":
