@@ -152,9 +152,10 @@ async def list_accept_registrations(update: Update, context: ContextTypes.DEFAUL
             results = cursor.fetchall()
 
     response = "Lista utenti da accettare:\n\n"
-    for result in results:
-        response += f"[{result['username']}]\n"
-        response += f"/accetta {result['telegram_id']}\n\n"
+    if len(results):
+        for result in results:
+            response += f"[{result['username']}]\n"
+            response += f"/accetta {result['telegram_id']}\n\n"
     else:
         response += "Nessuno, che tristezza!"
 
