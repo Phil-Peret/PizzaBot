@@ -73,13 +73,12 @@ async def is_enabled(update: Update, context: CallbackContext) -> bool:
 
 async def is_rider(update: Update, context: CallbackContext) -> bool:
     telegram_id = update.effective_user.id
-    if is_admin(telegram_id):
-        return True
+
     # Getting user is rider
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "SELECT 1 FROM rider WHERE telegram_id = %s"
+            sql = "SELECT 1 FROM riders WHERE telegram_id = %s"
             cursor.execute(sql, (telegram_id,))
             return cursor.fetchone() is not None
 
@@ -116,7 +115,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     username = update.effective_chat.first_name + ' ' + update.effective_chat.last_name
     telegram_id = update.effective_chat.id
     # block user already registered
-    if already_registered(telegram_id):
+    if await already_registered(telegram_id):
         await update.message.reply_text(f"""Hai già una richiesta in attesa o sei già registrato a questo bot!""")
         return
     # Adding user to database in users with authorized = 0 for further authorization
