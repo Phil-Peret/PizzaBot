@@ -14,8 +14,6 @@ services:
     build:
       context: .
       dockerfile: db.Dockerfile
-    volumes:
-      - ./ddl.sql:/docker-entrypoint-initdb.d/ddl.sql
     restart: unless-stopped
     environment:
       MARIADB_DATABASE: pizza311bot

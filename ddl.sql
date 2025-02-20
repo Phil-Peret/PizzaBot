@@ -29,27 +29,52 @@ CREATE TABLE `places` (
   PRIMARY KEY (`place_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
-CREATE TABLE 'orders' (
+CREATE TABLE `orders` (
   `order_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `total` decimal(10,2) NOT NULL DEFAULT 0.00,
-  `rider` int(10) unsigned NOT NULL DEFAULT 0,
+  `rider_id` int(10) unsigned DEFAULT NULL,
+  `event_date` datetime NOT NULL DEFAULT current_timestamp(),
+  `completed` int(10) unsigned NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`order_id`),
-  CONSTRAINT `orders_riders_FK` FOREIGN KEY (`rider`) REFERENCES `telegram_id` (`riders`)
+  CONSTRAINT `orders_riders_FK` FOREIGN KEY (`rider_id`) REFERENCES `riders` (`telegram_id`)
 )ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
-CREATE TABLE 'items' (
+CREATE TABLE `items` (
   `item_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `order_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `order_by` int(10) unsigned NOT NULL DEFAULT 0,
+  `order_id` int(10) unsigned NOT NULL,
+  `ordered_by` int(10) unsigned NOT NULL DEFAULT 0,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`item_id`)
-  CONSTRAINT `items_orders_FK` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`)
-  CONSTRAINT `items_users_FK` FOREIGN KEy (`order_by`) REFERENCES `users` (`telegram_id`)
+  PRIMARY KEY (`item_id`),
+  CONSTRAINT `items_orders_FK` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`),
+  CONSTRAINT `items_users_FK` FOREIGN KEY (`ordered_by`) REFERENCES `users` (`telegram_id`)
 )ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
 -- DEFAULT ADMINS
 INSERT INTO users (telegram_id, username, is_admin, is_enabled) VALUES (121527971, 'Alessandro Marchioro', 1, 1);
-INSERT INTO users (telegram_id, username, is_admin, is_enabeld) VALUES (51194667, 'Filippo Peretti', 1, 1)
+INSERT INTO users (telegram_id, username, is_admin, is_enabled) VALUES (51194667, 'Filippo Peretti', 1, 1);
+
+-- INSERTING ORDER DAYS
+DELIMITER //
+
+CREATE PROCEDURE InsertThursdays()
+BEGIN
+    DECLARE start_date DATETIME DEFAULT '2025-01-01 19:30:00';
+    DECLARE end_date DATETIME DEFAULT '2030-12-31 19:30:00';
+    
+    -- Find the first Thursday of 2025
+    WHILE WEEKDAY(start_date) != 3 DO
+        SET start_date = DATE_ADD(start_date, INTERVAL 1 DAY);
+    END WHILE;
+    
+    -- Insert orders for each Thursday until the end of 2030
+    WHILE start_date <= end_date DO
+        INSERT INTO orders (event_date) VALUES (start_date);
+        SET start_date = DATE_ADD(start_date, INTERVAL 7 DAY);
+    END WHILE;
+END //
+DELIMITER ;
+
+-- Call the procedure to perform the insertions
+CALL InsertThursdays();
