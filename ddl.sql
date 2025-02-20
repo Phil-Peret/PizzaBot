@@ -29,5 +29,27 @@ CREATE TABLE `places` (
   PRIMARY KEY (`place_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
 
+CREATE TABLE 'orders' (
+  `order_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `total` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `rider` int(10) unsigned NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`order_id`),
+  CONSTRAINT `orders_riders_FK` FOREIGN KEY (`rider`) REFERENCES `telegram_id` (`riders`)
+)ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+
+CREATE TABLE 'items' (
+  `item_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `order_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `order_by` int(10) unsigned NOT NULL DEFAULT 0,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`item_id`)
+  CONSTRAINT `items_orders_FK` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`)
+  CONSTRAINT `items_users_FK` FOREIGN KEy (`order_by`) REFERENCES `users` (`telegram_id`)
+)ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+
 -- DEFAULT ADMINS
 INSERT INTO users (telegram_id, username, is_admin, is_enabled) VALUES (121527971, 'Alessandro Marchioro', 1, 1);
+INSERT INTO users (telegram_id, username, is_admin, is_enabeld) VALUES (51194667, 'Filippo Peretti', 1, 1)
