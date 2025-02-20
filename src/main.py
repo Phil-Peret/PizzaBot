@@ -91,12 +91,7 @@ async def already_registered(telegram_id: int) -> bool:
             return cursor.fetchone() is not None
 
 async def already_rider_selected() -> bool:
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "SELECT 1 FROM riders"
-            cursor.execute(sql)
-            return cursor.fetchone() is not None
+    raise NotImplementedError()
 
 
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -125,7 +120,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             sql = "INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE telegram_id = telegram_id;"
             cursor.execute(sql, (telegram_id, username,))
         connection.commit()
-    notify_admin(f"""Un nuovo utene è in attesa di essere accettato: *{username}*""")
+    notify_admin(f"""Un nuovo utente è in attesa di essere accettato: *{username}*""")
 
     response = f"""Ciao {username}, sarai tra poco accettato nel bot da un amministratore!
 Non appena avremmo conferma, ti verrá notificato qui l'esito della registrazione :)"""
@@ -180,21 +175,44 @@ async def accept_registration(update: Update, context: ContextTypes) -> None:
         logger.error(str(e))
         await update.message.reply_text("Utente invalido!")
 
+
 @ensure_is_enabled
 async def become_a_rider(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
-    if already_rider_selected():
-        await update.message.reply_text(f"""C'è già un rider per questa serata! 
-Ordina pure la pizza che prefersici con il comando /ordina""")
+    if await is_rider(update, context):
+        await update.message.reply_text(f"""Sei giá un rider!""")
         return
 
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO riders (telegram_id) VALUES (%s)"
+            sql = "INSERT INTO riders (telegram_id, rider_description) VALUES (%s, 'Per pagamenti: scrivere in privato')"
             cursor.execute(sql, (telegram_id,))
-    await update.message.reply_text(f"""Sei diventato rider per questa pizzata! 
-Adesso potrai vedere la lista delle pizze dei vari utenti e il prezzo!""")
+        connection.commit()
+    
+    await update.message.reply_text(f"""Sei diventato rider per le pizzate del 311, grande!""")
+
+
+@ensure_is_rider
+async def register_rider_description(update: Update, context: ContextTypes) -> None:
+    telegram_id = update.effective_user.id
+    if not await is_rider(update, context):
+        await update.message.reply_text(f"""Non sei un rider!""")
+        return
+
+    new_description =" ".join(update.message.text.split(' ')[1:])
+    if len(new_description) == 0:
+        await update.message.reply_text(f"""Devi per forza avere una descrizione, inseriscila dopo il comando!""")
+        return
+
+    connection = get_db_connection()
+    with connection:
+        with connection.cursor() as cursor:
+            sql = "UPDATE riders SET rider_description = %s WHERE telegram_id = %s;"
+            cursor.execute(sql, (new_description, telegram_id,))
+        connection.commit()
+    
+    await update.message.reply_text(f"""Descrizione rider aggiornata con successo!""")
 
 @ensure_is_rider
 async def check_list_item() -> None:
@@ -216,6 +234,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     }
     rider_commands = {
         BotCommand("lista_ordini", "Visualizza la lista degli ordini"),
+        BotCommand("aggiorna_descrizione_rider", "Aggiorna la descrizione pagamento rider")
     }
     admin_commands = {
         BotCommand("lista_ordini", "Visualizza la lista degli ordini"),
@@ -224,12 +243,15 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     }
     
     commands = set()
-    if already_registered(telegram_id):
+    if await already_registered(telegram_id):
         commands.update(registered_commands)
-    if is_rider(update, context):
-        commands.update(rider_commands)  
-    if is_admin(update, context):
+        await update.message.reply_text("""Bentornato brosky!""")
+    if await is_rider(update, context):
+        commands.update(rider_commands)
+        await update.message.reply_text("""Pronto ad andare a prendere altre pizze?""")
+    if await is_admin(update, context):
         commands.update(admin_commands)
+        await update.message.reply_text("""Per controllare la lista accettazioni, usa /lista_attesa""")
     else:
         commands = unregistered_commands
         await update.message.reply_text("""Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!""")
@@ -249,6 +271,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler('accetta', accept_registration, has_args=1))
     app.add_handler(CommandHandler("diventa_rider", become_a_rider))
     app.add_handler(CommandHandler("lista_ordini", check_list_item))
+    app.add_handler(CommandHandler("aggiorna_descrizione_rider", register_rider_description))
 
     logger.info("Bot is running...")
     app.run_polling()
