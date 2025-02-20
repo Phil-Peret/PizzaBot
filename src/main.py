@@ -223,12 +223,13 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         BotCommand("lista_attesa", "Visualizza la lista di attesa utenti"),
     }
     
+    print("Sono qui!")
     commands = set()
-    if already_registered(telegram_id):
+    if await already_registered(telegram_id):
         commands.update(registered_commands)
-    if is_rider(update, context):
+    if await is_rider(update, context):
         commands.update(rider_commands)  
-    if is_admin(update, context):
+    if await is_admin(update, context):
         commands.update(admin_commands)
     else:
         commands = unregistered_commands
