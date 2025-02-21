@@ -49,62 +49,61 @@ def get_db_connection():
                              cursorclass=pymysql.cursors.DictCursor)
 
 
-async def is_admin(update: Update, context: CallbackContext) -> bool:
-    telegram_id = update.effective_user.id
-
-    # Getting user admins
+def boolQuery(sql: str, telegram_id: int) -> bool:
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "SELECT 1 FROM users WHERE telegram_id = %s AND is_enabled = 1 AND is_admin = 1;"
             cursor.execute(sql, (telegram_id,))
             return cursor.fetchone is not None
+    
+
+async def is_admin(update: Update, context: CallbackContext) -> bool:
+    sql = "SELECT 1 FROM users WHERE telegram_id = %s AND is_enabled = 1 AND is_admin = 1;"
+    return boolQuery(sql, update.effective_user.id)
 
 async def is_enabled(update: Update, context: CallbackContext) -> bool:
-    telegram_id = update.effective_user.id
-
-    # Getting user accepted
-    connection = get_db_connection()
-    with connection: 
-        with connection.cursor() as cursor:
-            sql = "SELECT telegram_id FROM users WHERE telegram_id = %s AND is_enabled = 1"
-            cursor.execute(sql, (telegram_id,))
-            return cursor.fetchone() is not None
+    sql = "SELECT telegram_id FROM users WHERE telegram_id = %s AND is_enabled = 1"
+    return boolQuery(sql, update.effective_user.id)
 
 async def is_rider(update: Update, context: CallbackContext) -> bool:
-    telegram_id = update.effective_user.id
-
-    # Getting user is rider
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "SELECT 1 FROM riders WHERE telegram_id = %s"
-            cursor.execute(sql, (telegram_id,))
-            return cursor.fetchone() is not None
+    sql = "SELECT 1 FROM riders WHERE telegram_id = %s"
+    return boolQuery(sql, update.effective_user.id)
 
 async def already_registered(telegram_id: int) -> bool:
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "SELECT 1 FROM users WHERE telegram_id = %s"
-            cursor.execute(sql, (telegram_id,))
-            return cursor.fetchone() is not None
+    sql = "SELECT 1 FROM users WHERE telegram_id = %s"
+    return boolQuery(sql, telegram_id)
 
 async def already_rider_selected() -> bool:
     raise NotImplementedError()
 
+@ensure_is_enabled
+async def change_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """TODO: modifica o annulla l'ordine di un utente, controllando che il rider non abbia gia' ordinato """
+    raise NotImplementedError()
+
+@ensure_is_admin
+async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """TODO: - decidere se cancellare dal db o semplicemente settare flag a non registrato, chiedere prima conferma"""
+    username = update.effective_chat.first_name + ' ' + update.effective_chat.last_name
+    connection = get_db_connection()
+    with connection:
+        with connection.cursor() as cursor:
+            sql = "DELETE FROM users WHERE telegram_id = %s;"
+            cursor.execute(sql, (update.effective_chat.id, ))
+        connection.commit()
+    notify_admin(f"""Utente cancellato: *{username}*""")
 
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         f"""Ciao, io sono il bot del 311 per la pizza!
 
 Tramite questo bot potrai:
-  - Richiedere la registrazione al bot
-  - Registrarti come "rider" per andare a prendere tu le pizze
-  - Prenotare la tua pizza preferita per questa settimana
+  - 📋 Richiedere la registrazione al bot
+  - 🛵 Registrarti come "rider" per andare a prendere tu le pizze
+  - 🍕 Prenotare la tua pizza preferita per questa settimana
 
 Quando sei pronto, comincia con il registrarti tramite il comando /registrami !"""
-    )      
+    )
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     username = update.effective_chat.first_name + ' ' + update.effective_chat.last_name
