@@ -280,16 +280,19 @@ async def register_rider_description(update: Update, context: ContextTypes) -> N
 async def check_list_orders() -> None:
     """TODO: Ricavare la lista degli ordini e visualizzare il totale provvisorio/definitivo al momento della chiusura delle prenotazioni"""
     
-
-@todo_command_not_implemented
-@ensure_is_enabled
-async def edit_personal_order():
-    """TODO: Implementa funzione di inserimento ordine personale"""
-    
     
 @todo_command_not_implemented
 @ensure_is_enabled
 async def make_personal_order():
+    """TODO: Implementa funzione di inserimento ordine personale"""
+    
+    # NOTE: Ognuno inserisce la sua pizza; una persona NON puó ordinare per gli altri
+    # Se hai giá una pizza ordinata, visualizzala in modo che possa decidere se modificare l'ordine o meno
+    
+    
+@todo_command_not_implemented
+@ensure_is_enabled
+async def edit_personal_order():
     """TODO: Implementa funzione di modifica ordine personale"""
     
     
@@ -298,11 +301,17 @@ async def make_personal_order():
 async def view_personal_order():
     """TODO: Implementa funzione di visualizzazione ordine personale"""
     
+    # NOTE: Se possibile, oltre a visualizzare il proprio ordine, visualizza anche se lo stato di pagamento da parte del
+    # rider che ha ricevuto i soldi é in stato "accettato" e quindi ha confermato che gli sono arrivati i soldi della pizza
+    
     
 @todo_command_not_implemented
 @ensure_is_enabled
 async def delete_personal_order():
     """TODO: Implementa funzione di cancellazione ordine personale"""
+    
+    # NOTE: Cancella semplicemente l'ordine della pizza; se la pizza é giá stata pagata, notifica il rider che deve
+    # restituire i soldi all'ordinante MA fregatene di tutto ció che puó avvenire dopo, notifica solo!
 
 
 async def init_user(update: Update, context: ContextTypes) -> None:
@@ -342,7 +351,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     if await is_admin(update, context):
         commands.update(admin_commands)
         await update.message.reply_text(
-            """Per controllare la lista accettazioni, usa /lista_attesa"""
+            """Per controllare la l# Inserisci solo se non ha giá un ordine (fregatene di una persona che ordina per piú persone, ognuno si ordina la sua)ista accettazioni, usa /lista_attesa"""
         )
     else:
         commands = unregistered_commandsmake_personal_order
