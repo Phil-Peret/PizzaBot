@@ -52,7 +52,17 @@ def ensure_is_rider(func):
             return await func(update, context, *args, **kwargs)
         else:
             await update.message.reply_text(
-                f"""🚫 Non sei il rider di questa pizzata, attendi la prossima!"""
+                f"""🚫 Non sei un rider!"""
+            )
+
+    return wrapper
+
+
+def todo_command_not_implemented(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
+        return await update.message.reply_text(
+                f"""TODO: Funzione da implementare"""
             )
 
     return wrapper
@@ -266,8 +276,42 @@ async def register_rider_description(update: Update, context: ContextTypes) -> N
 
 
 @ensure_is_rider
-async def check_list_item() -> None:
+@todo_command_not_implemented
+async def check_list_orders() -> None:
     """TODO: Ricavare la lista degli ordini e visualizzare il totale provvisorio/definitivo al momento della chiusura delle prenotazioni"""
+    
+    
+@todo_command_not_implemented
+@ensure_is_enabled
+async def make_personal_order():
+    """TODO: Implementa funzione di inserimento ordine personale"""
+    
+    # NOTE: Ognuno inserisce la sua pizza; una persona NON puó ordinare per gli altri
+    # Se hai giá una pizza ordinata, visualizzala in modo che possa decidere se modificare l'ordine o meno
+    
+    
+@todo_command_not_implemented
+@ensure_is_enabled
+async def edit_personal_order():
+    """TODO: Implementa funzione di modifica ordine personale"""
+    
+    
+@todo_command_not_implemented
+@ensure_is_enabled
+async def view_personal_order():
+    """TODO: Implementa funzione di visualizzazione ordine personale"""
+    
+    # NOTE: Se possibile, oltre a visualizzare il proprio ordine, visualizza anche se lo stato di pagamento da parte del
+    # rider che ha ricevuto i soldi é in stato "accettato" e quindi ha confermato che gli sono arrivati i soldi della pizza
+    
+    
+@todo_command_not_implemented
+@ensure_is_enabled
+async def delete_personal_order():
+    """TODO: Implementa funzione di cancellazione ordine personale"""
+    
+    # NOTE: Cancella semplicemente l'ordine della pizza; se la pizza é giá stata pagata, notifica il rider che deve
+    # restituire i soldi all'ordinante MA fregatene di tutto ció che puó avvenire dopo, notifica solo!
 
 
 async def init_user(update: Update, context: ContextTypes) -> None:
@@ -282,6 +326,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         BotCommand("ordina", "Ordina la tua pizza!"),
         BotCommand("modifica_ordine", "Modifica ordine"),
         BotCommand("visualizza_ordine", "Visualizza il tuo ordine"),
+        BotCommand("cancella_ordine", "Cancella il tuo ordine"),
         BotCommand("diventa_rider", "Proponiti come rider di questa pizzata!"),
     }
     rider_commands = {
@@ -296,7 +341,6 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         BotCommand("lista_attesa", "Visualizza la lista di attesa utenti"),
     }
 
-    print("Sono qui!")
     commands = set()
     if await already_registered(telegram_id):
         commands.update(registered_commands)
@@ -307,10 +351,10 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     if await is_admin(update, context):
         commands.update(admin_commands)
         await update.message.reply_text(
-            """Per controllare la lista accettazioni, usa /lista_attesa"""
+            """Per controllare la l# Inserisci solo se non ha giá un ordine (fregatene di una persona che ordina per piú persone, ognuno si ordina la sua)ista accettazioni, usa /lista_attesa"""
         )
     else:
-        commands = unregistered_commands
+        commands = unregistered_commandsmake_personal_order
         await update.message.reply_text(
             """Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!"""
         )
@@ -330,10 +374,16 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("lista_attesa", list_accept_registrations))
     app.add_handler(CommandHandler("accetta", accept_registration, has_args=1))
     app.add_handler(CommandHandler("diventa_rider", become_a_rider))
-    app.add_handler(CommandHandler("lista_ordini", check_list_item))
+    app.add_handler(CommandHandler("lista_ordini", check_list_orders))
     app.add_handler(
         CommandHandler("aggiorna_descrizione_rider", register_rider_description)
     )
+    
+    # Order handlers
+    app.add_handler(CommandHandler("ordina", make_personal_order))
+    app.add_handler(CommandHandler("modifica_ordine", edit_personal_order))
+    app.add_handler(CommandHandler("visualizza_ordine", view_personal_order))
+    app.add_handler(CommandHandler("cancella_ordine", delete_personal_order))
 
     logger.info("Bot is running...")
     app.run_polling()
