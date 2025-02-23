@@ -7,7 +7,12 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from telegram import BotCommand, Update
-from telegram.ext import ApplicationBuilder, CallbackContext, CommandHandler, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackContext,
+    CommandHandler,
+    ContextTypes,
+)
 
 load_dotenv()
 
@@ -18,8 +23,12 @@ def ensure_is_admin(func):
         if await is_admin(update, context):
             return await func(update, context, *args, **kwargs)
         else:
-            await update.message.reply_text("🚫 Devi essere un admin per eseguire questo comando!")
+            await update.message.reply_text(
+                "🚫 Devi essere un admin per eseguire questo comando!"
+            )
+
     return wrapper
+
 
 def ensure_is_enabled(func):
     @wraps(func)
@@ -27,9 +36,13 @@ def ensure_is_enabled(func):
         if await is_enabled(update, context):
             return await func(update, context, *args, **kwargs)
         else:
-            await update.message.reply_text(f"""🚫 Devi richiedere l'accesso e attendere che un admin ti accetti per eseguire questo comando!
-Premi /registrami se ancora non l'hai fatto!""")
+            await update.message.reply_text(
+                f"""🚫 Devi richiedere l'accesso e attendere che un admin ti accetti per eseguire questo comando!
+Premi /registrami se ancora non l'hai fatto!"""
+            )
+
     return wrapper
+
 
 # admin bypass rider check
 def ensure_is_rider(func):
@@ -38,60 +51,73 @@ def ensure_is_rider(func):
         if await (is_rider(update, context) or is_admin(update, context)):
             return await func(update, context, *args, **kwargs)
         else:
-            await update.message.reply_text(f"""🚫 Non sei il rider di questa pizzata, attendi la prossima!""")
+            await update.message.reply_text(
+                f"""🚫 Non sei il rider di questa pizzata, attendi la prossima!"""
+            )
+
     return wrapper
 
+
 def get_db_connection():
-    return pymysql.connect(host='database',
-                             user='root',
-                             password=os.getenv('DB_PASSWORD'),
-                             database='pizza311bot',
-                             cursorclass=pymysql.cursors.DictCursor)
+    return pymysql.connect(
+        host="database",
+        user="root",
+        password=os.getenv("DB_PASSWORD"),
+        database="pizza311bot",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
 
 
-def boolQuery(sql: str, telegram_id: int) -> bool:
+def is_query_result_true(sql: str, telegram_id: int) -> bool:
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
             cursor.execute(sql, (telegram_id,))
-            return cursor.fetchone is not None
-    
+            return cursor.fetchone() is not None
+
 
 async def is_admin(update: Update, context: CallbackContext) -> bool:
     sql = "SELECT 1 FROM users WHERE telegram_id = %s AND is_enabled = 1 AND is_admin = 1;"
-    return boolQuery(sql, update.effective_user.id)
+    return is_query_result_true(sql, update.effective_user.id)
+
 
 async def is_enabled(update: Update, context: CallbackContext) -> bool:
     sql = "SELECT telegram_id FROM users WHERE telegram_id = %s AND is_enabled = 1"
-    return boolQuery(sql, update.effective_user.id)
+    return is_query_result_true(sql, update.effective_user.id)
+
 
 async def is_rider(update: Update, context: CallbackContext) -> bool:
     sql = "SELECT 1 FROM riders WHERE telegram_id = %s"
-    return boolQuery(sql, update.effective_user.id)
+    return is_query_result_true(sql, update.effective_user.id)
+
 
 async def already_registered(telegram_id: int) -> bool:
     sql = "SELECT 1 FROM users WHERE telegram_id = %s"
-    return boolQuery(sql, telegram_id)
+    return is_query_result_true(sql, telegram_id)
+
 
 async def already_rider_selected() -> bool:
     raise NotImplementedError()
 
+
 @ensure_is_enabled
 async def change_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """TODO: modifica o annulla l'ordine di un utente, controllando che il rider non abbia gia' ordinato """
+    """TODO: modifica o annulla l'ordine di un utente, controllando che il rider non abbia gia' ordinato"""
     raise NotImplementedError()
+
 
 @ensure_is_admin
 async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """TODO: - decidere se cancellare dal db o semplicemente settare flag a non registrato, chiedere prima conferma"""
-    username = update.effective_chat.first_name + ' ' + update.effective_chat.last_name
+    username = update.effective_chat.first_name + " " + update.effective_chat.last_name
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
             sql = "DELETE FROM users WHERE telegram_id = %s;"
-            cursor.execute(sql, (update.effective_chat.id, ))
+            cursor.execute(sql, (update.effective_chat.id,))
         connection.commit()
     notify_admin(f"""Utente cancellato: *{username}*""")
+
 
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -105,25 +131,35 @@ Tramite questo bot potrai:
 Quando sei pronto, comincia con il registrarti tramite il comando /registrami !"""
     )
 
+
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    username = update.effective_chat.first_name + ' ' + update.effective_chat.last_name
+    username = update.effective_chat.first_name + " " + update.effective_chat.last_name
     telegram_id = update.effective_chat.id
     # block user already registered
     if await already_registered(telegram_id):
-        await update.message.reply_text(f"""Hai già una richiesta in attesa o sei già registrato a questo bot!""")
+        await update.message.reply_text(
+            f"""Hai già una richiesta in attesa o sei già registrato a questo bot!"""
+        )
         return
     # Adding user to database in users with authorized = 0 for further authorization
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
             sql = "INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE telegram_id = telegram_id;"
-            cursor.execute(sql, (telegram_id, username,))
+            cursor.execute(
+                sql,
+                (
+                    telegram_id,
+                    username,
+                ),
+            )
         connection.commit()
     notify_admin(f"""Un nuovo utente è in attesa di essere accettato: *{username}*""")
 
     response = f"""Ciao {username}, sarai tra poco accettato nel bot da un amministratore!
 Non appena avremmo conferma, ti verrá notificato qui l'esito della registrazione :)"""
     await update.message.reply_text(response)
+
 
 async def notify_admin(message: str) -> None:
     admin_ids = []
@@ -132,11 +168,16 @@ async def notify_admin(message: str) -> None:
         with connection.cursor() as cursor:
             sql = "SELECT telegram_id FROM users WHERE is_admin = 1"
             cursor.execute(sql)
-            admin_ids = [row['telegram_id'] for row in cursor.fetchall()]
-    await asyncio.gather(*(app.bot.send_message(admin_id, message) for admin_id in admin_ids))
+            admin_ids = [row["telegram_id"] for row in cursor.fetchall()]
+    await asyncio.gather(
+        *(app.bot.send_message(admin_id, message) for admin_id in admin_ids)
+    )
+
 
 @ensure_is_admin
-async def list_accept_registrations(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def list_accept_registrations(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     # Getting list of not-already-enabled users
     connection = get_db_connection()
     with connection:
@@ -159,7 +200,7 @@ async def list_accept_registrations(update: Update, context: ContextTypes.DEFAUL
 @ensure_is_admin
 async def accept_registration(update: Update, context: ContextTypes) -> None:
     try:
-        telegram_id = int(update.message.text.split(' ')[1])
+        telegram_id = int(update.message.text.split(" ")[1])
 
         connection = get_db_connection()
         with connection:
@@ -188,8 +229,10 @@ async def become_a_rider(update: Update, context: ContextTypes) -> None:
             sql = "INSERT INTO riders (telegram_id, rider_description) VALUES (%s, 'Per pagamenti: scrivere in privato')"
             cursor.execute(sql, (telegram_id,))
         connection.commit()
-    
-    await update.message.reply_text(f"""Sei diventato rider per le pizzate del 311, grande!""")
+
+    await update.message.reply_text(
+        f"""Sei diventato rider per le pizzate del 311, grande!"""
+    )
 
 
 @ensure_is_rider
@@ -199,23 +242,33 @@ async def register_rider_description(update: Update, context: ContextTypes) -> N
         await update.message.reply_text(f"""Non sei un rider!""")
         return
 
-    new_description =" ".join(update.message.text.split(' ')[1:])
+    new_description = " ".join(update.message.text.split(" ")[1:])
     if len(new_description) == 0:
-        await update.message.reply_text(f"""Devi per forza avere una descrizione, inseriscila dopo il comando!""")
+        await update.message.reply_text(
+            f"""Devi per forza avere una descrizione, inseriscila dopo il comando!"""
+        )
         return
 
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
             sql = "UPDATE riders SET rider_description = %s WHERE telegram_id = %s;"
-            cursor.execute(sql, (new_description, telegram_id,))
+            cursor.execute(
+                sql,
+                (
+                    new_description,
+                    telegram_id,
+                ),
+            )
         connection.commit()
-    
+
     await update.message.reply_text(f"""Descrizione rider aggiornata con successo!""")
+
 
 @ensure_is_rider
 async def check_list_item() -> None:
     """TODO: Ricavare la lista degli ordini e visualizzare il totale provvisorio/definitivo al momento della chiusura delle prenotazioni"""
+
 
 async def init_user(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
@@ -233,14 +286,16 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     }
     rider_commands = {
         BotCommand("lista_ordini", "Visualizza la lista degli ordini"),
-        BotCommand("aggiorna_descrizione_rider", "Aggiorna la descrizione pagamento rider")
+        BotCommand(
+            "aggiorna_descrizione_rider", "Aggiorna la descrizione pagamento rider"
+        ),
     }
     admin_commands = {
         BotCommand("lista_ordini", "Visualizza la lista degli ordini"),
         BotCommand("accetta", "Accetta un utente in attesa"),
         BotCommand("lista_attesa", "Visualizza la lista di attesa utenti"),
     }
-    
+
     print("Sono qui!")
     commands = set()
     if await already_registered(telegram_id):
@@ -251,15 +306,20 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         await update.message.reply_text("""Pronto ad andare a prendere altre pizze?""")
     if await is_admin(update, context):
         commands.update(admin_commands)
-        await update.message.reply_text("""Per controllare la lista accettazioni, usa /lista_attesa""")
+        await update.message.reply_text(
+            """Per controllare la lista accettazioni, usa /lista_attesa"""
+        )
     else:
         commands = unregistered_commands
-        await update.message.reply_text("""Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!""")
+        await update.message.reply_text(
+            """Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!"""
+        )
     # telegram not accept duplicate commands
     await app.bot.setMyCommands(list(commands))
 
+
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
+    app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
     # Info handlers
     app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("start", init_user))
@@ -267,11 +327,13 @@ if __name__ == "__main__":
 
     # User registration handlers
     app.add_handler(CommandHandler("registrami", register))
-    app.add_handler(CommandHandler('lista_attesa', list_accept_registrations))
-    app.add_handler(CommandHandler('accetta', accept_registration, has_args=1))
+    app.add_handler(CommandHandler("lista_attesa", list_accept_registrations))
+    app.add_handler(CommandHandler("accetta", accept_registration, has_args=1))
     app.add_handler(CommandHandler("diventa_rider", become_a_rider))
     app.add_handler(CommandHandler("lista_ordini", check_list_item))
-    app.add_handler(CommandHandler("aggiorna_descrizione_rider", register_rider_description))
+    app.add_handler(
+        CommandHandler("aggiorna_descrizione_rider", register_rider_description)
+    )
 
     logger.info("Bot is running...")
     app.run_polling()
