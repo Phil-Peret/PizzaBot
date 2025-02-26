@@ -44,6 +44,8 @@ CREATE TABLE `items` (
   `item_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `order_id` int(10) unsigned NOT NULL,
   `ordered_by` int(10) unsigned NOT NULL DEFAULT 0,
+  `name` varchar(100) NOT NULL,
+  `price` int(10,2) unsigned NOT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`item_id`),
