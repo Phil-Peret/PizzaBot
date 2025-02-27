@@ -292,21 +292,36 @@ async def edit_personal_order():
     """TODO: Implementa funzione di modifica ordine personale"""
 
 
-@todo_command_not_implemented
 @ensure_is_enabled
 async def view_personal_order(update: Update, context: ContextTypes) -> None:
-    """TODO: Implementa funzione di visualizzazione ordine personale"""
-    tekegram_id = update.effective_user.id
+    telegram_id = update.effective_user.id
     connection = get_db_connection()
     items = []
-    with connection:
-        with connection.cursor() as cursor:
-            sql = """SELECT name, price FROM items AS i
-            JOIN orders AS o ON o.id = i.order_id
-            WHERE o.completated = 1 AND 
-            i.ordered_by = %s"""
-        cursor.execute(sql, (tekegram_id,))
-        items = cursor.fetchall()
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                sql = """SELECT name, price FROM items AS i
+                INNER JOIN orders AS o ON o.order_id = i.order_id
+                WHERE o.completed = 1 AND 
+                i.ordered_by = %s"""
+            cursor.execute(sql, (telegram_id,))
+            items = [
+                {"name": row["name"], "price": row["price"]}
+                for row in cursor.fetchall()
+            ]
+
+    except Exception as e:
+        logger.error(str(e))
+
+    if items:
+        response = ""
+        for item in items:
+            response += item["name"] + " " + item["price"] + "\n"
+        await update.message.reply_text(str(response))
+    else:
+        await update.message.reply_text(
+            "Devi ancora ordinare! Usa il comando /ordina 🍕 "
+        )
 
     # NOTE: Se possibile, oltre a visualizzare il proprio ordine, visualizza anche se lo stato di pagamento da parte del
     # rider che ha ricevuto i soldi é in stato "accettato" e quindi ha confermato che gli sono arrivati i soldi della pizza
@@ -361,7 +376,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
             """Per controllare la l# Inserisci solo se non ha giá un ordine (fregatene di una persona che ordina per piú persone, ognuno si ordina la sua)ista accettazioni, usa /lista_attesa"""
         )
     else:
-        commands = unregistered_commandsmake_personal_order
+        commands = unregistered_commands
         await update.message.reply_text(
             """Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!"""
         )

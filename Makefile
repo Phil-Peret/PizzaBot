@@ -5,7 +5,7 @@ ENV_FILE = .env
 SERVICE = bot
 
 up:
-	docker-compose -f $(COMPOSE_FILE) up -d
+	docker-compose -f $(COMPOSE_FILE) up
 
 down:
 	docker-compose -f $(COMPOSE_FILE) down
