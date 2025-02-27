@@ -83,12 +83,12 @@ def is_query_result_true(sql: str, telegram_id: int) -> bool:
 
 
 async def is_admin(update: Update, context: CallbackContext) -> bool:
-    sql = "SELECT 1 FROM users WHERE telegram_id = %s AND is_enabled = 1 AND is_admin = 1;"
+    sql = "SELECT 1 FROM users WHERE id = %s AND is_enabled = 1 AND is_admin = 1;"
     return is_query_result_true(sql, update.effective_user.id)
 
 
 async def is_enabled(update: Update, context: CallbackContext) -> bool:
-    sql = "SELECT telegram_id FROM users WHERE telegram_id = %s AND is_enabled = 1"
+    sql = "SELECT id FROM users WHERE id = %s AND is_enabled = 1"
     return is_query_result_true(sql, update.effective_user.id)
 
 
@@ -98,7 +98,7 @@ async def is_rider(update: Update, context: CallbackContext) -> bool:
 
 
 async def already_registered(telegram_id: int) -> bool:
-    sql = "SELECT 1 FROM users WHERE telegram_id = %s"
+    sql = "SELECT 1 FROM users WHERE id = %s"
     return is_query_result_true(sql, telegram_id)
 
 
@@ -119,7 +119,7 @@ async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "DELETE FROM users WHERE telegram_id = %s;"
+            sql = "DELETE FROM users WHERE id = %s;"
             cursor.execute(sql, (update.effective_chat.id,))
         connection.commit()
     notify_admin(f"""Utente cancellato: *{username}*""")
@@ -151,7 +151,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE telegram_id = telegram_id;"
+            sql = "INSERT INTO users (id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE id = id;"
             cursor.execute(
                 sql,
                 (
@@ -172,9 +172,9 @@ async def notify_admin(message: str) -> None:
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "SELECT telegram_id FROM users WHERE is_admin = 1"
+            sql = "SELECT id FROM users WHERE is_admin = 1"
             cursor.execute(sql)
-            admin_ids = [row["telegram_id"] for row in cursor.fetchall()]
+            admin_ids = [row["id"] for row in cursor.fetchall()]
     await asyncio.gather(
         *(app.bot.send_message(admin_id, message) for admin_id in admin_ids)
     )
@@ -188,7 +188,7 @@ async def list_accept_registrations(
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "SELECT telegram_id, username FROM users WHERE is_enabled = 0;"
+            sql = "SELECT id, username FROM users WHERE is_enabled = 0;"
             cursor.execute(sql)
             results = cursor.fetchall()
 
@@ -196,7 +196,7 @@ async def list_accept_registrations(
     if len(results):
         for result in results:
             response += f"[{result['username']}]\n"
-            response += f"/accetta {result['telegram_id']}\n\n"
+            response += f"/accetta {result['id']}\n\n"
     else:
         response += "Nessuno, che tristezza!"
 
@@ -211,7 +211,7 @@ async def accept_registration(update: Update, context: ContextTypes) -> None:
         connection = get_db_connection()
         with connection:
             with connection.cursor() as cursor:
-                sql = "UPDATE users SET is_enabled = 1 WHERE telegram_id = %s;"
+                sql = "UPDATE users SET is_enabled = 1 WHERE id = %s;"
                 cursor.execute(sql, (telegram_id,))
 
             connection.commit()
@@ -303,7 +303,7 @@ async def view_personal_order(update: Update, context: ContextTypes) -> None:
                 sql = """SELECT name, price FROM items AS i
                 INNER JOIN orders AS o ON o.order_id = i.order_id
                 WHERE o.completed = 1 AND 
-                i.ordered_by = %s"""
+                i.ordered_by = %s""" # TODO: pippo fixa questo pefforza x fucking d
             cursor.execute(sql, (telegram_id,))
             items = [
                 {"name": row["name"], "price": row["price"]}
