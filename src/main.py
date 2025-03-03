@@ -13,6 +13,12 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
 )
+from telegram.ext import (
+    ApplicationBuilder,
+    CallbackContext,
+    CommandHandler,
+    ContextTypes,
+)
 
 load_dotenv()
 
@@ -51,7 +57,9 @@ def ensure_is_rider(func):
         if await (is_rider(update, context) or is_admin(update, context)):
             return await func(update, context, *args, **kwargs)
         else:
-            await update.message.reply_text(f"""🚫 Non sei un rider!""")
+            await update.message.reply_text(
+                f"""🚫 Non sei il rider di questa pizzata, attendi la prossima!"""
+            )
 
     return wrapper
 
@@ -91,6 +99,14 @@ async def is_enabled(update: Update, context: CallbackContext) -> bool:
     sql = "SELECT id FROM users WHERE id = %s AND is_enabled = 1"
     return is_query_result_true(sql, update.effective_user.id)
 
+    # Getting user accepted
+    connection = get_db_connection()
+    with connection:
+        with connection.cursor() as cursor:
+            sql = "SELECT telegram_id FROM users WHERE telegram_id = %s AND is_enabled = 1"
+            cursor.execute(sql, (telegram_id,))
+            return cursor.fetchone() is not None
+
 
 async def is_rider(update: Update, context: CallbackContext) -> bool:
     sql = "SELECT 1 FROM riders WHERE telegram_id = %s"
@@ -100,6 +116,19 @@ async def is_rider(update: Update, context: CallbackContext) -> bool:
 async def already_registered(telegram_id: int) -> bool:
     sql = "SELECT 1 FROM users WHERE id = %s"
     return is_query_result_true(sql, telegram_id)
+
+
+async def current_order() -> int:
+    connection = get_db_connection()
+    with connection:
+        with connection.cursor() as cursor:
+            sql = """SELECT id FROM orders 
+            WHERE completed = 0
+            AND event_date >= NOW()
+            ORDER BY id ASC
+            """
+            cursor.execute(sql, ())
+            return cursor.fetchone()["id"]
 
 
 async def already_rider_selected() -> bool:
@@ -142,7 +171,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     username = update.effective_chat.first_name + " " + update.effective_chat.last_name
     telegram_id = update.effective_chat.id
     # block user already registered
-    if await already_registered(telegram_id):
+    if already_registered(telegram_id):
         await update.message.reply_text(
             f"""Hai già una richiesta in attesa o sei già registrato a questo bot!"""
         )
@@ -151,7 +180,7 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     connection = get_db_connection()
     with connection:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO users (id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE id = id;"
+            sql = "INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE telegram_id = telegram_id;"
             cursor.execute(
                 sql,
                 (
@@ -174,7 +203,7 @@ async def notify_admin(message: str) -> None:
         with connection.cursor() as cursor:
             sql = "SELECT id FROM users WHERE is_admin = 1"
             cursor.execute(sql)
-            admin_ids = [row["id"] for row in cursor.fetchall()]
+            admin_ids = [row["telegram_id"] for row in cursor.fetchall()]
     await asyncio.gather(
         *(app.bot.send_message(admin_id, message) for admin_id in admin_ids)
     )
@@ -227,6 +256,11 @@ async def become_a_rider(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
     if await is_rider(update, context):
         await update.message.reply_text(f"""Sei giá un rider!""")
+    if already_rider_selected():
+        await update.message.reply_text(
+            f"""C'è già un rider per questa serata! 
+Ordina pure la pizza che prefersici con il comando /ordina"""
+        )
         return
 
     connection = get_db_connection()
@@ -234,10 +268,9 @@ async def become_a_rider(update: Update, context: ContextTypes) -> None:
         with connection.cursor() as cursor:
             sql = "INSERT INTO riders (telegram_id, rider_description) VALUES (%s, 'Per pagamenti: scrivere in privato')"
             cursor.execute(sql, (telegram_id,))
-        connection.commit()
-
     await update.message.reply_text(
-        f"""Sei diventato rider per le pizzate del 311, grande!"""
+        f"""Sei diventato rider per questa pizzata! 
+Adesso potrai vedere la lista delle pizze dei vari utenti e il prezzo!"""
     )
 
 
@@ -277,10 +310,35 @@ async def check_list_orders() -> None:
     """TODO: Ricavare la lista degli ordini e visualizzare il totale provvisorio/definitivo al momento della chiusura delle prenotazioni"""
 
 
-@todo_command_not_implemented
 @ensure_is_enabled
-async def make_personal_order():
-    """TODO: Implementa funzione di inserimento ordine personale"""
+async def make_personal_order(update: Update, context: CallbackContext) -> None:
+    telegram_id = update.effective_user.id
+    connection = get_db_connection()
+    order_id = await current_order()
+
+    if len(context.args) != 2:
+        await update.message.reply_text("""Comando errato!""")
+        return
+
+    name, price = context.args[:2]
+
+    try:
+        price = round(float(price), 2)
+    except ValueError:
+        await update.message.reply_text(
+            """Prezzo non valido! Deve essere un numero con due decimali (es. `12.50`)."""
+        )
+        return
+
+    try:
+        with connection:
+            with connection.cursor() as cursor:
+                sql = """INSERT INTO items (order_id, telegram_id, name, price) 
+                VALUES (%s, %s, %s, %s)"""
+                cursor.execute(sql, (order_id, telegram_id, name, price))
+            connection.commit()
+    except Exception as e:
+        logger.error(str(e))
 
     # NOTE: Ognuno inserisce la sua pizza; una persona NON puó ordinare per gli altri
     # Se hai giá una pizza ordinata, visualizzala in modo che possa decidere se modificare l'ordine o meno
@@ -296,27 +354,28 @@ async def edit_personal_order():
 async def view_personal_order(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
     connection = get_db_connection()
+    order_id = await current_order()
     items = []
     try:
-        with connection:
-            with connection.cursor() as cursor:
-                sql = """SELECT name, price FROM items AS i
-                INNER JOIN orders AS o ON o.order_id = i.order_id
-                WHERE o.completed = 1 AND 
-                i.ordered_by = %s""" # TODO: pippo fixa questo pefforza x fucking d
-            cursor.execute(sql, (telegram_id,))
+        with connection.cursor() as cursor:
+            sql = """SELECT name, price FROM items
+            INNER JOIN orders ON orders.id = items.order_id
+            WHERE orders.id = %s AND 
+            items.telegram_id = %s"""
+            cursor.execute(sql, (order_id, telegram_id))
             items = [
                 {"name": row["name"], "price": row["price"]}
                 for row in cursor.fetchall()
             ]
-
     except Exception as e:
         logger.error(str(e))
+    finally:
+        connection.close()
 
     if items:
         response = ""
         for item in items:
-            response += item["name"] + " " + item["price"] + "\n"
+            response += item["name"] + "\t" + str(item["price"]) + "€\n"
         await update.message.reply_text(str(response))
     else:
         await update.message.reply_text(
@@ -366,11 +425,9 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     commands = set()
     if await already_registered(telegram_id):
         commands.update(registered_commands)
-        await update.message.reply_text("""Bentornato brosky!""")
-    if await is_rider(update, context):
+    if is_rider(update, context):
         commands.update(rider_commands)
-        await update.message.reply_text("""Pronto ad andare a prendere altre pizze?""")
-    if await is_admin(update, context):
+    if is_admin(update, context):
         commands.update(admin_commands)
         await update.message.reply_text(
             """Per controllare la l# Inserisci solo se non ha giá un ordine (fregatene di una persona che ordina per piú persone, ognuno si ordina la sua)ista accettazioni, usa /lista_attesa"""
