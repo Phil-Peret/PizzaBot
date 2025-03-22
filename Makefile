@@ -15,6 +15,8 @@ down:
 
 restart: down up
 
+restart-bg: down upd
+
 status:
 	docker-compose -f $(COMPOSE_FILE) ps
 
