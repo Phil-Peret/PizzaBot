@@ -56,6 +56,7 @@ CREATE TABLE `items` (
 -- DEFAULT ADMINS
 INSERT INTO users (id, username, is_admin, is_enabled) VALUES (121527971, 'Alessandro Marchioro', 1, 1);
 INSERT INTO users (id, username, is_admin, is_enabled) VALUES (51194667, 'Filippo Peretti', 1, 1);
+INSERT INTO users (id, username, is_admin, is_enabled) VALUES (19121995, 'Davide Bianchi', 1, 1);
 
 -- INSERTING ORDER DAYS
 DELIMITER //

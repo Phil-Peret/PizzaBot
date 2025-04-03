@@ -7,13 +7,21 @@ SERVICE = bot
 up:
 	docker-compose -f $(COMPOSE_FILE) up
 
+upd:
+	docker-compose -f $(COMPOSE_FILE) up -d
+
 down:
 	docker-compose -f $(COMPOSE_FILE) down
 
 restart: down up
 
+restart-bg: down upd
+
 status:
 	docker-compose -f $(COMPOSE_FILE) ps
+
+logs:
+	docker-compose logs -f $(SERVICE)
 
 init-venv:
 	$(PYTHON) -m venv $(VENV)
