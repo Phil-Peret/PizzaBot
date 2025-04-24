@@ -97,6 +97,7 @@ async def accept_registration(update: Update, context: ContextTypes) -> None:
     try:
         telegram_id = int(update.message.text.split(" ")[1])
         db.set_user_enabled(telegram_id)
+        app.bot.send_message(telegram_id, "Sei stato accettato da un amministratore!")
         await update.message.reply_text("Utente abilitato con successo!")
     except Exception as e:
         logger.error(str(e))

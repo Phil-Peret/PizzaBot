@@ -7,6 +7,9 @@ SERVICE = bot
 up:
 	docker-compose -f $(COMPOSE_FILE) up
 
+upd:
+	docker-compose -f $(COMPOSE_FILE) up -d
+
 down:
 	docker-compose -f $(COMPOSE_FILE) down
 
@@ -31,7 +34,3 @@ source-venv:
 
 remove-venv:
 	rm -rf $(VENV)
-
-clean:
-	docker system prune -af
-	docker volume prune -f
