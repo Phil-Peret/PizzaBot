@@ -70,3 +70,17 @@ async def notify_users(message: str, app) -> None:
         *(app.bot.send_message(user["id"], message) for user in users),
         return_exceptions=True,
     )
+
+
+async def notify_user(message: str, telegram_id: int, app) -> None:
+    await app.bot.send_message(telegram_id, message)
+
+
+async def price_check(price: float, update: Update) -> bool:
+    if price < 0 or price > 20:
+        await update.message.reply_message(f"⚠ Prezzo errato ⚠ ")
+
+
+async def str_check(desc: str) -> bool:
+    if len(desc) > 120:
+        await update.message.reply_message(f"⚠ Parametri non validi ⚠ ")

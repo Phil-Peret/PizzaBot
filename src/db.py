@@ -278,19 +278,19 @@ async def all_admin() -> list[user]:
         with connection.cursor() as cursor:
             sql = "SELECT id FROM users WHERE is_admin = 1"
             cursor.execute(sql)
-            admins = [{"id": row["telegram_id"]} for row in cursor.fetchall()]
+            user = [{"id": row["id"]} for row in cursor.fetchall()]
     except Exception as e:
         logger.error(str(e))
     finally:
         connection.close()
-    return admins
+    return user
 
 
 async def add_user_to_register_queue(telegram_id: int, username: str) -> None:
     connection = db_connection()
     try:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO users (telegram_id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE telegram_id = telegram_id;"
+            sql = "INSERT INTO users (id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE id = id;"
             cursor.execute(
                 sql,
                 (
@@ -341,7 +341,7 @@ async def get_current_rider(order_id: int) -> user:
     try:
         with connection.cursor() as cursor:
             sql = """SELECT users.id, users.username FROM users
-            INNER JOIN riders ON riders.telegrm_id = users.id
+            INNER JOIN riders ON riders.telegram_id = users.id
             INNER JOIN orders ON orders.rider_id = riders.telegram_id
             WHERE orders.id = %s"""
             cursor.execute(sql, (order_id,))
