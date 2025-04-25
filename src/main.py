@@ -7,7 +7,8 @@ from utils import (
     rider_already_selected,
     notify_admin,
     notify_users,
-    price_check,
+    price_valid,
+    str_valid,
 )
 import prettytable as pt
 from messages import MESSAGES
@@ -181,7 +182,14 @@ async def make_personal_order(update: Update, context: CallbackContext) -> None:
         *name, price = context.args
         name = " ".join(name)
         price = round(float(price), 2)
-        await price_check(price, update)
+        if not price_valid(price):
+            await update.message.reply_text(
+                MESSAGES["price_input_error"], parse_mode="MarkdownV2"
+            )
+        if not str_valid(name):
+            await update.message.reply_text(
+                MESSAGES["str_intput_error"], parse_mode="MarkdownV2"
+            )
     except ValueError:
         await update.message.reply_text(
             MESSAGES["error_parameters_order"],
@@ -205,7 +213,14 @@ async def edit_personal_order(update: Update, context: CallbackContext) -> None:
         item_id = int(context.args[0])
         name = " ".join(context.args[1:-1])
         price = round(float(context.args[-1]), 2)
-        await price_check(price, update)
+        if not price_valid(price):
+            await update.message.reply_text(
+                MESSAGES["price_input_error"], parse_mode="MarkdownV2"
+            )
+        if not str_valid(name):
+            await update.message.reply_text(
+                MESSAGES["str_intput_error"], parse_mode="MarkdownV2"
+            )
     except (ValueError, IndexError):
         await update.message.reply_text(
             MESSAGES["error_parameters_edit_order"],

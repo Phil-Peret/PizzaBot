@@ -23,4 +23,6 @@ MESSAGES = {
     "order_deleted": "✔ Ordine rimosso ✔",
     "orders_closed": "Gli ordini sono stati chiusi dal rider! Non è più possibile ordinare o modificare l'ordine",
     "not_already_registered": "Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso\!",
+    "price_input_error": "*Prezzo errato*\nControlla il prezzo inserito\!",
+    "str_error_input": "*Nome pizza errato*\nIl nome della pizza sembra errato, riprova",
 }
