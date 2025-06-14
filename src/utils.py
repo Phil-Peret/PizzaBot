@@ -79,8 +79,10 @@ async def notify_user(message: str, telegram_id: int, app) -> None:
 def price_valid(price: float) -> bool:
     if price < 0 or price > 20:
         return False
+    return True
 
 
 def str_valid(desc: str) -> bool:
     if len(desc) > 120:
         return False
+    return True

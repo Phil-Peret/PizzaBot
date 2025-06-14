@@ -21,11 +21,6 @@ class user(TypedDict):
     username: str
 
 
-class total(TypedDict):
-    username: str
-    total: float
-
-
 def db_connection():
     return pymysql.connect(
         host="database",
@@ -151,9 +146,9 @@ async def current_order() -> order:
 
 
 async def is_admin(telegram_id: int) -> bool:
-    conncetion = db_connection()
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
+        with connection.cursor() as cursor:
             sql = (
                 "SELECT 1 FROM users WHERE id = %s AND is_enabled = 1 AND is_admin = 1;"
             )
@@ -162,49 +157,49 @@ async def is_admin(telegram_id: int) -> bool:
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
+        connection.close()
     return is_admin
 
 
 async def is_enabled(telegram_id: int) -> bool:
-    conncetion = db_connection()
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
+        with connection.cursor() as cursor:
             sql = "SELECT id FROM users WHERE id = %s AND is_enabled = 1;"
             cursor.execute(sql, (telegram_id,))
             is_enabled = cursor.fetchone() is not None
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
+        connection.close()
     return is_enabled
 
 
 async def is_rider(telegram_id: int) -> bool:
-    conncetion = db_connection()
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
+        with connection.cursor() as cursor:
             sql = "SELECT 1 FROM riders WHERE telegram_id = %s;"
             cursor.execute(sql, (telegram_id,))
             is_rider = cursor.fetchone() is not None
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
+        connection.close()
     return is_rider
 
 
 async def already_registered(telegram_id: int) -> bool:
-    conncetion = db_connection()
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
+        with connection.cursor() as cursor:
             sql = "SELECT 1 FROM users WHERE id = %s"
             cursor.execute(sql, (telegram_id,))
             already_registered = cursor.fetchone() is not None
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
+        connection.close()
     return already_registered
 
 
@@ -307,9 +302,9 @@ async def add_user_to_register_queue(telegram_id: int, username: str) -> None:
 
 async def get_all_registered_user() -> list[user]:
     users = []
-    conncetion = db_connection()
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
+        with connection.cursor() as cursor:
             sql = "SELECT id, username WHERE is_enabled=1"
             cursor.execute(sql, ())
             users = [
@@ -319,7 +314,7 @@ async def get_all_registered_user() -> list[user]:
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
+        connection.close()
     return users
 
 
@@ -405,46 +400,47 @@ async def set_order_completated(order_id: int) -> None:
         connection.close()
 
 
-async def last_confirmed_order() -> order:
+async def last_confirmed_order() -> int:
     order = None
-    conncetion = db_connection()
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
+        with connection.cursor() as cursor:
             sql = """SELECT id FROM orders 
             WHERE completed = 1
-            ORDER BY id ASC
+            ORDER BY id DESC
+            LIMIT 1
             """
             cursor.execute(sql)
-            order = {"id": cursor.fetchone()["id"]}
+            order = cursor.fetchone()["id"]
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
+        connection.close()
     return order
 
 
-async def total_order_for_each_user(order_id: int) -> list[total]:
-    total_users = []
-    conncetion = db_connection()
+async def last_confirmed_orders(order_id: int) -> list[item]:
+    items = []
+    connection = db_connection()
     try:
-        with conncetion.cursor() as cursor:
-            sql = """SELECT users.username, SUM(items.price) AS total FROM items 
+        with connection.cursor() as cursor:
+            sql = """SELECT users.username, items.name, items.price FROM items 
             INNER JOIN orders ON orders.id = items.order_id
             INNER JOIN users ON users.id = items.telegram_id
             WHERE orders.id = %s
-            GROUP BY users.username
             ORDER BY users.username ASC
             """
             cursor.execute(sql, (order_id,))
-            total_users = [
+            items = [
                 {
-                    "username": total_user["username"],
-                    "total": total_user["total"],
+                    "username": item["username"],
+                    "name": item["name"],
+                    "price": item["price"],
                 }
-                for total_user in cursor.fetchall()
+                for item in cursor.fetchall()
             ]
     except Exception as e:
         logger.error(str(e))
     finally:
-        conncetion.close()
-    return total_users
+        connection.close()
+    return items

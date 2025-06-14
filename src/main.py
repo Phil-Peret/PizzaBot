@@ -42,6 +42,7 @@ async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     else:
         await update.message.reply_text(MESSAGES["welcome"], parse_mode="MarkdownV2")
+    await init_user(update, context)
 
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -188,7 +189,7 @@ async def make_personal_order(update: Update, context: CallbackContext) -> None:
             )
         if not str_valid(name):
             await update.message.reply_text(
-                MESSAGES["str_intput_error"], parse_mode="MarkdownV2"
+                MESSAGES["str_input_error"], parse_mode="MarkdownV2"
             )
     except ValueError:
         await update.message.reply_text(
@@ -291,7 +292,7 @@ async def view_personal_last_confirmed_order(update: Update, context: CallbackCo
     if not order:
         await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
         return
-    items = await db.user_items_by_order(telegram_id, order["id"])
+    items = await db.user_items_by_order(telegram_id, order)
     table = pt.PrettyTable()
     table.field_names = ["Id", "Nome", "Prezzo (€)"]
     if items:
@@ -309,31 +310,33 @@ async def view_personal_last_confirmed_order(update: Update, context: CallbackCo
 
 
 @ensure_is_rider
-async def view_total_user(update: Update, context: CallbackContext):
-    order = await db.last_confirmed_order()
-    if not order:
+async def view_last_confirmed_orders(update: Update, context: CallbackContext):
+    order_id = await db.last_confirmed_order()
+    logger.info(order_id)
+    if not order_id:
         await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
         return
-    total_users = await db.total_order_for_each_user(order["id"])
+    orders = await db.last_confirmed_orders(order_id)
     table = pt.PrettyTable()
-    table.field_names = ["Username", "Prezzo (€)"]
-    if total_users:
+    table.field_names = ["Username", "Nome", "Prezzo (€)"]
+    if orders:
         total = float(0)
-        for total_user in total_users:
-            table.add_row([total_user["username"], total_user["total"]])
-            total += float(total_user["total"])
+        for order in orders:
+            table.add_row([order["username"], order["name"], order["price"]])
+            total += float(order["price"])
         table.add_divider()
-        table.add_row(["TOTALE", f"{total:.2f}"])
+        table.add_row(["", "TOTALE", f"{total:.2f}"])
         await update.message.reply_text(
-            f"<b>🍕 Totali per utente 🍕</b><pre>{table}</pre>", parse_mode="HTML"
+            f"<b>🍕 Ordini Confermati 🍕</b><pre>{table}</pre>", parse_mode="HTML"
         )
     else:
         await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
 
 
-# TODO: Se possibile, aggiungere i comandi in base al ruolo utente, attualmente questa config non funziona
 async def init_user(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
+    # reset current command
+    await app.bot.delete_my_commands()
 
     unregistered_commands = {
         BotCommand("info", "Ricevi informazioni sul bot"),
@@ -353,7 +356,9 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         BotCommand(
             "aggiorna_descrizione_rider", "Aggiorna la descrizione pagamento rider"
         ),
-        BotCommand("visualizza_totali", "Visualizza i totali per ogni utente"),
+        BotCommand(
+            "ordini_confermati", "Visualizza la lista degli ultimi ordini confermati"
+        ),
         BotCommand("chiudi_ordinazioni", "Chiudi le ordinazioni per questa pizzata"),
     }
     admin_commands = {
@@ -366,7 +371,7 @@ async def init_user(update: Update, context: ContextTypes) -> None:
     commands = set()
     if await db.already_registered(telegram_id):
         commands.update(registered_commands)
-    if await db.is_rider(telegram_id):
+    if await db.is_rider(telegram_id) or await db.is_admin(telegram_id):
         commands.update(rider_commands)
     if await db.is_admin(telegram_id):
         commands.update(admin_commands)
@@ -384,8 +389,8 @@ async def init_user(update: Update, context: ContextTypes) -> None:
 if __name__ == "__main__":
     app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
     # Info handlers
-    app.add_handler(CommandHandler("info", info))
     app.add_handler(CommandHandler("start", info))
+    app.add_handler(CommandHandler("info", info))
 
     # User registration handlers
     app.add_handler(CommandHandler("registrami", register))
@@ -399,7 +404,7 @@ if __name__ == "__main__":
     app.add_handler(
         CommandHandler("ordine_confermato", view_personal_last_confirmed_order)
     )
-    app.add_handler(CommandHandler("visualizza_totali", view_total_user))
+    app.add_handler(CommandHandler("ordini_confermati", view_last_confirmed_orders))
     app.add_handler(CommandHandler("chiudi_ordinazioni", confirm_and_close_order))
     # Order handlers
     app.add_handler(CommandHandler("ordina", make_personal_order))
