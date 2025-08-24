@@ -1,22 +1,24 @@
 services:
-  bot:
-    build:
-      context: .
-      dockerfile: bot.Dockerfile
-    volumes:
-      - ./src:/app
-    env_file:
-      - .env
-    command: python3 /app/main.py
-    restart: unless-stopped
+    bot:
+        build:
+            context: .
+            dockerfile: bot.Dockerfile
+        volumes:
+            - ./src:/app
+        env_file:
+            - .env
+        command: python3 -m jurigged -v /app/main.py
+        restart: unless-stopped
 
-  database:
-    build:
-      context: .
-      dockerfile: db.Dockerfile
-    restart: unless-stopped
-    environment:
-      MARIADB_DATABASE: pizza311bot
-      MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "127.0.0.1:3306:3306" # TODO: used for local DBeaver visualization, disable/comment in prod
+    database:
+        build:
+            context: .
+            dockerfile: db.Dockerfile
+        restart: unless-stopped
+        environment:
+            MARIADB_DATABASE: pizza311bot
+            MARIADB_ROOT_PASSWORD: ${DB_PASSWORD}
+        volumes:
+            - ./db:/var/lib/mysql
+        ports:
+            - '127.0.0.1:3306:3306' # TODO: used for local DBeaver visualization, disable/comment in prod

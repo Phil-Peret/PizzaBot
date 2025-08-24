@@ -1,12 +1,21 @@
-import asyncio
 import os
-import pymysql.cursors
-from functools import wraps
-
+import db
+from utils import (
+    ensure_is_admin,
+    ensure_is_enabled,
+    ensure_is_rider,
+    rider_already_selected,
+    notify_admin,
+    notify_users,
+    price_valid,
+    str_valid,
+)
+import prettytable as pt
+from messages import MESSAGES
 from dotenv import load_dotenv
 from loguru import logger
 
-from telegram import BotCommand, Update
+from telegram import BotCommand, Update, BotCommandScopeChat
 from telegram.ext import (
     ApplicationBuilder,
     CallbackContext,
@@ -17,166 +26,43 @@ from telegram.ext import (
 load_dotenv()
 
 
-def ensure_is_admin(func):
-    @wraps(func)
-    async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
-        if await is_admin(update, context):
-            return await func(update, context, *args, **kwargs)
-        else:
-            await update.message.reply_text(
-                "🚫 Devi essere un admin per eseguire questo comando!"
-            )
-
-    return wrapper
-
-
-def ensure_is_enabled(func):
-    @wraps(func)
-    async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
-        if await is_enabled(update, context):
-            return await func(update, context, *args, **kwargs)
-        else:
-            await update.message.reply_text(
-                f"""🚫 Devi richiedere l'accesso e attendere che un admin ti accetti per eseguire questo comando!
-Premi /registrami se ancora non l'hai fatto!"""
-            )
-
-    return wrapper
-
-
-# admin bypass rider check
-def ensure_is_rider(func):
-    @wraps(func)
-    async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
-        if await (is_rider(update, context) or is_admin(update, context)):
-            return await func(update, context, *args, **kwargs)
-        else:
-            await update.message.reply_text(f"""🚫 Non sei un rider!""")
-
-    return wrapper
-
-
-def todo_command_not_implemented(func):
-    @wraps(func)
-    async def wrapper(update: Update, context: CallbackContext, *args, **kwargs):
-        return await update.message.reply_text(f"""TODO: Funzione da implementare""")
-
-    return wrapper
-
-
-def get_db_connection():
-    return pymysql.connect(
-        host="database",
-        user="root",
-        password=os.getenv("DB_PASSWORD"),
-        database="pizza311bot",
-        cursorclass=pymysql.cursors.DictCursor,
-    )
-
-
-def is_query_result_true(sql: str, telegram_id: int) -> bool:
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            cursor.execute(sql, (telegram_id,))
-            return cursor.fetchone() is not None
-
-
-async def is_admin(update: Update, context: CallbackContext) -> bool:
-    sql = "SELECT 1 FROM users WHERE id = %s AND is_enabled = 1 AND is_admin = 1;"
-    return is_query_result_true(sql, update.effective_user.id)
-
-
-async def is_enabled(update: Update, context: CallbackContext) -> bool:
-    sql = "SELECT id FROM users WHERE id = %s AND is_enabled = 1"
-    return is_query_result_true(sql, update.effective_user.id)
-
-
-async def is_rider(update: Update, context: CallbackContext) -> bool:
-    sql = "SELECT 1 FROM riders WHERE telegram_id = %s"
-    return is_query_result_true(sql, update.effective_user.id)
-
-
-async def already_registered(telegram_id: int) -> bool:
-    sql = "SELECT 1 FROM users WHERE id = %s"
-    return is_query_result_true(sql, telegram_id)
-
-
-async def already_rider_selected() -> bool:
-    raise NotImplementedError()
-
-
-@ensure_is_enabled
-async def change_order(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """TODO: modifica o annulla l'ordine di un utente, controllando che il rider non abbia gia' ordinato"""
-    raise NotImplementedError()
-
-
 @ensure_is_admin
 async def delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """TODO: - decidere se cancellare dal db o semplicemente settare flag a non registrato, chiedere prima conferma"""
-    username = update.effective_chat.first_name + " " + update.effective_chat.last_name
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "DELETE FROM users WHERE id = %s;"
-            cursor.execute(sql, (update.effective_chat.id,))
-        connection.commit()
-    notify_admin(f"""Utente cancellato: *{username}*""")
+    telegram_id = update.effective_user.id
+    db.delete_user(telegram_id)
+    await notify_admin(f"""Utente cancellato: *{telegram_id}*""", app)
 
 
 async def info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        f"""Ciao, io sono il bot del 311 per la pizza!
-
-Tramite questo bot potrai:
-  - 📋 Richiedere la registrazione al bot
-  - 🛵 Registrarti come "rider" per andare a prendere tu le pizze
-  - 🍕 Prenotare la tua pizza preferita per questa settimana
-
-Quando sei pronto, comincia con il registrarti tramite il comando /registrami !"""
-    )
+    telegram_id = update.effective_user.id
+    is_already_registered = await db.already_registered(telegram_id)
+    if is_already_registered:
+        await update.message.reply_text(
+            MESSAGES["welcome_back"], parse_mode="MarkdownV2"
+        )
+    else:
+        await update.message.reply_text(MESSAGES["welcome"], parse_mode="MarkdownV2")
+    await init_user(update, context)
 
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    username = update.effective_chat.first_name + " " + update.effective_chat.last_name
+    username = str(update.effective_chat.username)
     telegram_id = update.effective_chat.id
+    is_already_registered = await db.already_registered(telegram_id)
     # block user already registered
-    if await already_registered(telegram_id):
+    if is_already_registered:
         await update.message.reply_text(
-            f"""Hai già una richiesta in attesa o sei già registrato a questo bot!"""
+            MESSAGES["already_registered"], parse_mode="MarkdownV2"
         )
         return
     # Adding user to database in users with authorized = 0 for further authorization
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "INSERT INTO users (id, username) VALUES (%s, %s) ON DUPLICATE KEY UPDATE id = id;"
-            cursor.execute(
-                sql,
-                (
-                    telegram_id,
-                    username,
-                ),
-            )
-        connection.commit()
-    notify_admin(f"""Un nuovo utente è in attesa di essere accettato: *{username}*""")
-
-    response = f"""Ciao {username}, sarai tra poco accettato nel bot da un amministratore!
-Non appena avremmo conferma, ti verrá notificato qui l'esito della registrazione :)"""
-    await update.message.reply_text(response)
-
-
-async def notify_admin(message: str) -> None:
-    admin_ids = []
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "SELECT id FROM users WHERE is_admin = 1"
-            cursor.execute(sql)
-            admin_ids = [row["id"] for row in cursor.fetchall()]
-    await asyncio.gather(
-        *(app.bot.send_message(admin_id, message) for admin_id in admin_ids)
+    await db.add_user_to_register_queue(telegram_id, username)
+    await notify_admin(
+        MESSAGES["notify_admin_request"].format(telegram_id=telegram_id), app
+    )
+    await update.message.reply_text(
+        MESSAGES["confirm_registration_request"].format(username=username),
+        parse_mode="MarkdownV2",
     )
 
 
@@ -185,159 +71,272 @@ async def list_accept_registrations(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     # Getting list of not-already-enabled users
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "SELECT id, username FROM users WHERE is_enabled = 0;"
-            cursor.execute(sql)
-            results = cursor.fetchall()
+    users = await db.get_unregiter_user()
 
-    response = "Lista utenti da accettare:\n\n"
-    if len(results):
-        for result in results:
-            response += f"[{result['username']}]\n"
-            response += f"/accetta {result['id']}\n\n"
+    table = pt.PrettyTable()
+    table.field_names = ["Id", "User"]
+
+    if users:
+        for user in users:
+            table.add_row(
+                [
+                    user["id"],
+                    user["username"],
+                ]
+            )
+        await update.message.reply_text(
+            f"<b>Lista utenti in attesa</b><pre>{table}</pre>", parse_mode="HTML"
+        )
     else:
-        response += "Nessuno, che tristezza!"
-
-    await update.message.reply_text(response)
+        await update.message.reply_text(
+            MESSAGES["no_users_in_queue"], parse_mode="MarkdownV2"
+        )
 
 
 @ensure_is_admin
 async def accept_registration(update: Update, context: ContextTypes) -> None:
     try:
         telegram_id = int(update.message.text.split(" ")[1])
-
-        connection = get_db_connection()
-        with connection:
-            with connection.cursor() as cursor:
-                sql = "UPDATE users SET is_enabled = 1 WHERE id = %s;"
-                cursor.execute(sql, (telegram_id,))
-
-            connection.commit()
-
-        await update.message.reply_text("Utente abilitato con successo!")
+        await db.set_user_enabled(telegram_id)
+        await update.message.reply_text(
+            MESSAGES["user_accepted"], parse_mode="MarkdownV2"
+        )
+        await app.bot.send_message(
+            telegram_id, MESSAGES["just_registered"], parse_mode="MarkdownV2"
+        )
     except Exception as e:
         logger.error(str(e))
-        await update.message.reply_text("Utente invalido!")
+        await update.message.reply_text(
+            MESSAGES["user_not_found"], parse_mode="MarkdownV2"
+        )
 
 
 @ensure_is_enabled
 async def become_a_rider(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
-    if await is_rider(update, context):
-        await update.message.reply_text(f"""Sei giá un rider!""")
+    if await db.is_rider(telegram_id):
+        await update.message.reply_text(
+            MESSAGES["already_rider"], parse_mode="MarkdownV2"
+        )
         return
-
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "INSERT INTO riders (telegram_id, rider_description) VALUES (%s, 'Per pagamenti: scrivere in privato')"
-            cursor.execute(sql, (telegram_id,))
-        connection.commit()
-
-    await update.message.reply_text(
-        f"""Sei diventato rider per le pizzate del 311, grande!"""
-    )
+    if await rider_already_selected():
+        await update.message.reply_text(
+            MESSAGES["rider_already_set"], parse_mode="MarkdownV2"
+        )
+        return
+    await db.set_rider(telegram_id)
+    await update.message.reply_text(MESSAGES["become_a_rider"], parse_mode="MarkdownV2")
+    await init_user(update, context)
 
 
 @ensure_is_rider
 async def register_rider_description(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
-    if not await is_rider(update, context):
-        await update.message.reply_text(f"""Non sei un rider!""")
+    if not await db.is_rider(telegram_id):
+        await update.message.reply_text(
+            MESSAGES["not_a_rider"], parse_mode="MarkdownV2"
+        )
         return
 
     new_description = " ".join(update.message.text.split(" ")[1:])
     if len(new_description) == 0:
         await update.message.reply_text(
-            f"""Devi per forza avere una descrizione, inseriscila dopo il comando!"""
+            MESSAGES["missing_description"], parse_mode="MarkdownV2"
         )
         return
-
-    connection = get_db_connection()
-    with connection:
-        with connection.cursor() as cursor:
-            sql = "UPDATE riders SET rider_description = %s WHERE telegram_id = %s;"
-            cursor.execute(
-                sql,
-                (
-                    new_description,
-                    telegram_id,
-                ),
-            )
-        connection.commit()
-
-    await update.message.reply_text(f"""Descrizione rider aggiornata con successo!""")
+    await db.update_rider_description(new_description, telegram_id)
+    await update.message.reply_text(
+        MESSAGES["description_updated"], parse_mode="MarkdownV2"
+    )
 
 
 @ensure_is_rider
-@todo_command_not_implemented
-async def check_list_orders() -> None:
-    """TODO: Ricavare la lista degli ordini e visualizzare il totale provvisorio/definitivo al momento della chiusura delle prenotazioni"""
+async def check_list_orders(update: Update, context: ContextTypes) -> None:
+    order = await db.current_order()
+    items = await db.all_item_by_order(order["id"])
+    table = pt.PrettyTable()
+    table.field_names = ["Id", "username", "Nome", "Prezzo (€)"]
+
+    if items:
+        for item in items:
+            table.add_row(
+                [
+                    item["id"],
+                    item["username"],
+                    item["name"],
+                    item["price"],
+                ]
+            )
+        await update.message.reply_text(
+            f"<b>🍕 Lista ordini 🍕 </b><pre>{table}</pre>", parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
 
 
-@todo_command_not_implemented
 @ensure_is_enabled
-async def make_personal_order():
-    """TODO: Implementa funzione di inserimento ordine personale"""
+async def make_personal_order(update: Update, context: CallbackContext) -> None:
+    telegram_id = update.effective_user.id
+    order = await db.current_order()
 
-    # NOTE: Ognuno inserisce la sua pizza; una persona NON puó ordinare per gli altri
-    # Se hai giá una pizza ordinata, visualizzala in modo che possa decidere se modificare l'ordine o meno
+    try:
+        *name, price = context.args
+        name = " ".join(name)
+        price = round(float(price), 2)
+        if not price_valid(price):
+            await update.message.reply_text(
+                MESSAGES["price_input_error"], parse_mode="MarkdownV2"
+            )
+        if not str_valid(name):
+            await update.message.reply_text(
+                MESSAGES["str_input_error"], parse_mode="MarkdownV2"
+            )
+    except ValueError:
+        await update.message.reply_text(
+            MESSAGES["error_parameters_order"],
+            parse_mode="MarkdownV2",
+        )
+        return
+
+    await db.insert_item(name, price, order["id"], telegram_id)
+    await update.message.reply_text(
+        MESSAGES["order_confirmed"], parse_mode="MarkdownV2"
+    )
 
 
-@todo_command_not_implemented
 @ensure_is_enabled
-async def edit_personal_order():
-    """TODO: Implementa funzione di modifica ordine personale"""
+async def edit_personal_order(update: Update, context: CallbackContext) -> None:
+    telegram_id = update.effective_user.id
+    order = await db.current_order()
+    if len(order) == 0:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
+    try:
+        item_id = int(context.args[0])
+        name = " ".join(context.args[1:-1])
+        price = round(float(context.args[-1]), 2)
+        if not price_valid(price):
+            await update.message.reply_text(
+                MESSAGES["price_input_error"], parse_mode="MarkdownV2"
+            )
+        if not str_valid(name):
+            await update.message.reply_text(
+                MESSAGES["str_intput_error"], parse_mode="MarkdownV2"
+            )
+    except (ValueError, IndexError):
+        await update.message.reply_text(
+            MESSAGES["error_parameters_edit_order"],
+            parse_mode="MarkdownV2",
+        )
+        return
+    await db.update_user_item(name, price, order["id"], telegram_id, item_id)
+    await update.message.reply_text(
+        MESSAGES["order_updated"].format(order_id=item_id), parse_mode="MarkdownV2"
+    )
 
 
 @ensure_is_enabled
 async def view_personal_order(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
-    connection = get_db_connection()
-    items = []
-    try:
-        with connection:
-            with connection.cursor() as cursor:
-                sql = """SELECT name, price FROM items AS i
-                INNER JOIN orders AS o ON o.order_id = i.order_id
-                WHERE o.completed = 1 AND 
-                i.ordered_by = %s""" # TODO: pippo fixa questo pefforza x fucking d
-            cursor.execute(sql, (telegram_id,))
-            items = [
-                {"name": row["name"], "price": row["price"]}
-                for row in cursor.fetchall()
-            ]
-
-    except Exception as e:
-        logger.error(str(e))
+    order = await db.current_order()
+    items = await db.user_items_by_order(telegram_id, order["id"])
+    table = pt.PrettyTable()
+    table.field_names = ["Id", "Nome", "Prezzo (€)"]
 
     if items:
-        response = ""
+        total = float(0)
         for item in items:
-            response += item["name"] + " " + item["price"] + "\n"
-        await update.message.reply_text(str(response))
-    else:
+            table.add_row([item["id"], item["name"], item["price"]])
+            total += float(item["price"])
+        table.add_divider()
+        table.add_row(["", "TOTALE", f"{total:.2f}"])
         await update.message.reply_text(
-            "Devi ancora ordinare! Usa il comando /ordina 🍕 "
+            f"<b>🍕 Il tuo ordine 🍕 </b><pre>{table}</pre>", parse_mode="HTML"
         )
+    else:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
 
     # NOTE: Se possibile, oltre a visualizzare il proprio ordine, visualizza anche se lo stato di pagamento da parte del
     # rider che ha ricevuto i soldi é in stato "accettato" e quindi ha confermato che gli sono arrivati i soldi della pizza
 
 
-@todo_command_not_implemented
 @ensure_is_enabled
-async def delete_personal_order():
-    """TODO: Implementa funzione di cancellazione ordine personale"""
-
-    # NOTE: Cancella semplicemente l'ordine della pizza; se la pizza é giá stata pagata, notifica il rider che deve
+async def delete_personal_order(update: Update, context: CallbackContext) -> None:
+    telegram_id = update.effective_user.id
+    order = await db.current_order()
+    try:
+        if len(context.args) != 1:
+            raise ValueError
+        item_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            MESSAGES["error_parameters_deleted_order"], parse_mode="MarkdownV2"
+        )
+        return
+    await db.delete_user_item(telegram_id, item_id, order["id"])
+    await update.message.reply_text(MESSAGES["order_deleted"], parse_mode="MarkdownV2")
+    # NOTE: Cancella semplicemente l'ordine della pizza; se la pizza é giá stata pagata, notifica il  che deve
     # restituire i soldi all'ordinante MA fregatene di tutto ció che puó avvenire dopo, notifica solo!
+
+
+@ensure_is_rider
+async def confirm_and_close_order(update: Update, context: CallbackContext):
+    order = await db.current_order()
+    await db.set_order_completated(order["id"])
+    await notify_users(MESSAGES["orders_closed"], app)
+
+
+@ensure_is_enabled
+async def view_personal_last_confirmed_order(update: Update, context: CallbackContext):
+    telegram_id = update.effective_user.id
+    order = await db.last_confirmed_order()
+    if not order:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
+        return
+    items = await db.user_items_by_order(telegram_id, order)
+    table = pt.PrettyTable()
+    table.field_names = ["Id", "Nome", "Prezzo (€)"]
+    if items:
+        total = float(0)
+        for item in items:
+            table.add_row([item["id"], item["name"], item["price"]])
+            total += float(item["price"])
+        table.add_divider()
+        table.add_row(["", "TOTALE", f"{total:.2f}"])
+        await update.message.reply_text(
+            f"<b>🍕 Il tuo ultimo ordine 🍕</b><pre>{table}</pre>", parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
+
+
+@ensure_is_rider
+async def view_last_confirmed_orders(update: Update, context: CallbackContext):
+    order_id = await db.last_confirmed_order()
+    logger.info(order_id)
+    if not order_id:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
+        return
+    orders = await db.last_confirmed_orders(order_id)
+    table = pt.PrettyTable()
+    table.field_names = ["Username", "Nome", "Prezzo (€)"]
+    if orders:
+        total = float(0)
+        for order in orders:
+            table.add_row([order["username"], order["name"], order["price"]])
+            total += float(order["price"])
+        table.add_divider()
+        table.add_row(["", "TOTALE", f"{total:.2f}"])
+        await update.message.reply_text(
+            f"<b>🍕 Ordini Confermati 🍕</b><pre>{table}</pre>", parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(MESSAGES["no_orders"], parse_mode="MarkdownV2")
 
 
 async def init_user(update: Update, context: ContextTypes) -> None:
     telegram_id = update.effective_user.id
+    # reset current command
+    await app.bot.delete_my_commands()
 
     unregistered_commands = {
         BotCommand("info", "Ricevi informazioni sul bot"),
@@ -350,62 +349,68 @@ async def init_user(update: Update, context: ContextTypes) -> None:
         BotCommand("visualizza_ordine", "Visualizza il tuo ordine"),
         BotCommand("cancella_ordine", "Cancella il tuo ordine"),
         BotCommand("diventa_rider", "Proponiti come rider di questa pizzata!"),
+        BotCommand("ordine_confermato", "Visualizza l'ultimo ordine confermato"),
     }
     rider_commands = {
-        BotCommand("lista_ordini", "Visualizza la lista degli ordini"),
+        BotCommand("visualizza_ordini", "Visualizza la lista degli ordini"),
         BotCommand(
             "aggiorna_descrizione_rider", "Aggiorna la descrizione pagamento rider"
         ),
+        BotCommand(
+            "ordini_confermati", "Visualizza la lista degli ultimi ordini confermati"
+        ),
+        BotCommand("chiudi_ordinazioni", "Chiudi le ordinazioni per questa pizzata"),
     }
     admin_commands = {
-        BotCommand("lista_ordini", "Visualizza la lista degli ordini"),
         BotCommand("accetta", "Accetta un utente in attesa"),
         BotCommand("lista_attesa", "Visualizza la lista di attesa utenti"),
+        BotCommand("visualizza_totali", "Visualizza i totali per ogni utente"),
+        BotCommand("chiudi_ordinazioni", "Chiudi le ordinazioni per questa pizzata"),
     }
 
     commands = set()
-    if await already_registered(telegram_id):
+    if await db.already_registered(telegram_id):
         commands.update(registered_commands)
-        await update.message.reply_text("""Bentornato brosky!""")
-    if await is_rider(update, context):
+    if await db.is_rider(telegram_id) or await db.is_admin(telegram_id):
         commands.update(rider_commands)
-        await update.message.reply_text("""Pronto ad andare a prendere altre pizze?""")
-    if await is_admin(update, context):
+    if await db.is_admin(telegram_id):
         commands.update(admin_commands)
-        await update.message.reply_text(
-            """Per controllare la l# Inserisci solo se non ha giá un ordine (fregatene di una persona che ordina per piú persone, ognuno si ordina la sua)ista accettazioni, usa /lista_attesa"""
-        )
     else:
         commands = unregistered_commands
         await update.message.reply_text(
-            """Non sei ancora registrato, usa il comando /registrami per richiedere l'accesso!"""
+            MESSAGES["not_already_registered"], parse_mode="MarkdownV2"
         )
     # telegram not accept duplicate commands
-    await app.bot.setMyCommands(list(commands))
+    await app.bot.set_my_commands(
+        list(commands), scope=BotCommandScopeChat(telegram_id)
+    )
 
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
     # Info handlers
+    app.add_handler(CommandHandler("start", info))
     app.add_handler(CommandHandler("info", info))
-    app.add_handler(CommandHandler("start", init_user))
-    app.add_handler(CommandHandler("help", info))
 
     # User registration handlers
     app.add_handler(CommandHandler("registrami", register))
     app.add_handler(CommandHandler("lista_attesa", list_accept_registrations))
     app.add_handler(CommandHandler("accetta", accept_registration, has_args=1))
     app.add_handler(CommandHandler("diventa_rider", become_a_rider))
-    app.add_handler(CommandHandler("lista_ordini", check_list_orders))
+    app.add_handler(CommandHandler("visualizza_ordini", check_list_orders))
     app.add_handler(
         CommandHandler("aggiorna_descrizione_rider", register_rider_description)
     )
-
+    app.add_handler(
+        CommandHandler("ordine_confermato", view_personal_last_confirmed_order)
+    )
+    app.add_handler(CommandHandler("ordini_confermati", view_last_confirmed_orders))
+    app.add_handler(CommandHandler("chiudi_ordinazioni", confirm_and_close_order))
     # Order handlers
     app.add_handler(CommandHandler("ordina", make_personal_order))
     app.add_handler(CommandHandler("modifica_ordine", edit_personal_order))
     app.add_handler(CommandHandler("visualizza_ordine", view_personal_order))
     app.add_handler(CommandHandler("cancella_ordine", delete_personal_order))
 
-    logger.info("Bot is running...")
+    logger.info("Bot is RUNNING...")
     app.run_polling()
